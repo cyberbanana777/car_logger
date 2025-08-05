@@ -137,6 +137,50 @@ class CarLogger:
             )
             conn.commit()
             return cursor.lastrowid
+        
+    def display_service_status(self, current_mileage: int) -> None:
+            """Отображает статус сервиса в виде наглядной панели"""
+            try:
+                service_required = self.check_necessary_service(current_mileage)
+            except sqlite3.OperationalError as e:
+                console.print(f"[error]Ошибка при доступе к базе данныnх: {e}[/error]")
+                return
+            
+            if not service_required:
+                console.print(Panel(
+                    "✅ [success]Все системы в норме, сервис не требуется![/success]",
+                    title="Статус автомобиля",
+                    title_align="center",
+                    style="success",
+                    padding=(1, 4),
+                    width=80
+                ), justify="center")
+                return
+            
+            table = Table(
+                title="\nТребуется обслуживание",
+                title_style="warning",
+                show_header=True,
+                header_style="warning",
+                expand=True
+            )
+            table.add_column("Работа", style="info")
+            table.add_column("Последнее ТО", justify="right")
+            table.add_column("Следующее ТО", justify="right")
+            table.add_column("Текущий пробег", justify="right")
+            table.add_column("Статус", justify="center")
+            
+            for work_desc, (last_mileage, next_service) in service_required.items():
+                status = "[warning]ТРЕБУЕТСЯ![/warning]" if current_mileage >= next_service else "[info]Скоро потребуется[/info]"
+                table.add_row(
+                    work_desc,
+                    f"{last_mileage:,}".replace(",", " "),
+                    f"{next_service:,}".replace(",", " "),
+                    f"{current_mileage:,}".replace(",", " "),
+                    status
+                )
+            
+            console.print(table, justify="center")
 
     def show_service_history(self) -> None:
         """Отображает историю обслуживания в виде красивой таблицы"""
@@ -187,49 +231,60 @@ class CarLogger:
             
             console.print(table, justify="center")
 
-    def display_service_status(self, current_mileage: int) -> None:
-        """Отображает статус сервиса в виде наглядной панели"""
-        try:
-            service_required = self.check_necessary_service(current_mileage)
-        except sqlite3.OperationalError as e:
-            console.print(f"[error]Ошибка при доступе к базе данныnх: {e}[/error]")
-            return
-        
-        if not service_required:
-            console.print(Panel(
-                "✅ [success]Все системы в норме, сервис не требуется![/success]",
-                title="Статус автомобиля",
-                title_align="center",
-                style="success",
-                padding=(1, 4),
-                width=80
-            ), justify="center")
-            return
-        
-        table = Table(
-            title="\nТребуется обслуживание",
-            title_style="warning",
-            show_header=True,
-            header_style="warning",
-            expand=True
+def display_planned_services(show_title: bool = True) -> None:
+    """Отображает плановые сервисные работы с улучшенным оформлением"""
+    if show_title:
+        console.rule("[header]Процедуры планового ТО[/header]", align="center")
+    
+    table = Table(
+        title="\nПериодичность планового технического обслуживания" if show_title else None,
+        title_style="header",
+        show_header=True,
+        header_style="menu",
+        width=70,
+        show_lines=True,
+    )
+    table.add_column("Код", style="info", justify="center", width=8)
+    table.add_column("Процедура", min_width=45)
+    table.add_column("Интервал (км)", justify="right", width=15)
+    
+    for code, (work, interval) in PLANNED_WORK_WITH_PERIOD.items():
+        table.add_row(
+            f"[bold]{code}[/bold]",
+            work,
+            f"[bold]{interval // 1000} тыс.[/bold]"
         )
-        table.add_column("Работа", style="info")
-        table.add_column("Последнее ТО", justify="right")
-        table.add_column("Следующее ТО", justify="right")
-        table.add_column("Текущий пробег", justify="right")
-        table.add_column("Статус", justify="center")
-        
-        for work_desc, (last_mileage, next_service) in service_required.items():
-            status = "[warning]ТРЕБУЕТСЯ![/warning]" if current_mileage >= next_service else "[info]Скоро потребуется[/info]"
-            table.add_row(
-                work_desc,
-                f"{last_mileage:,}".replace(",", " "),
-                f"{next_service:,}".replace(",", " "),
-                f"{current_mileage:,}".replace(",", " "),
-                status
-            )
-        
-        console.print(table, justify="center")
+    
+    # Добавляем поясняющую панель
+    if show_title:
+        console.print(
+            Panel(
+                "В этом разделе представлен полный перечень регулярных\n"
+                "технических процедур с рекомендованными интервалами\n"
+                "пробега для вашего автомобиля",
+                title="ℹ️ Информация",
+                title_align="left",
+                style="info",
+                width=70,
+                padding=(1, 2)
+            ),
+            justify="center"
+        )
+        console.print()
+    
+    console.print(table, justify="center")
+    
+    if show_title:
+        console.print(
+            Panel(
+                "[bold]Важно:[/bold] Фактические интервалы могут отличаться в зависимости "
+                "от условий эксплуатации, рекомендаций производителя и технического состояния автомобиля",
+                style="warning",
+                width=70,
+                padding=(1, 2)
+            ),
+            justify="center"
+        )
 
 
 def display_main_menu() -> None:
@@ -247,7 +302,8 @@ def display_main_menu() -> None:
     menu.add_row("1. Проверить состояние автомобиля")
     menu.add_row("2. Добавить запись об обслуживании")
     menu.add_row("3. Просмотреть историю обслуживания")
-    menu.add_row("4. Выход")
+    menu.add_row("4. Процедуры планового ТО")  # Новый пункт меню
+    menu.add_row("5. Выход")  # Выход теперь пункт 5
     
     console.print(menu, justify="center")
 
@@ -270,23 +326,59 @@ def display_service_types() -> None:
     console.print(table, justify="center")
 
 
-def display_planned_services() -> None:
-    """Отображает плановые сервисные работы"""
+def display_planned_services(show_title: bool = True) -> None:
+    """Отображает плановые сервисные работы с улучшенным оформлением"""
+    if show_title:
+        console.rule("[header]Процедуры планового ТО[/header]", align="center")
+    
     table = Table(
-        title="Плановые сервисные работы",
-        title_style="menu",
+        title="\nПериодичность планового технического обслуживания" if show_title else None,
+        title_style="header",
         show_header=True,
         header_style="menu",
-        width=70
+        width=70,
+        box=None if not show_title else None,
+        show_lines=True,
     )
-    table.add_column("Код", style="info", justify="center")
-    table.add_column("Работа", min_width=40)
-    table.add_column("Интервал (км)", justify="right")
+    table.add_column("Код", style="info", justify="center", width=8)
+    table.add_column("Процедура", min_width=45)
+    table.add_column("Интервал (км)", justify="right", width=15)
     
     for code, (work, interval) in PLANNED_WORK_WITH_PERIOD.items():
-        table.add_row(str(code), work, f"{interval:,}".replace(",", " "))
+        table.add_row(
+            f"[bold]{code}[/bold]",
+            work,
+            f"[bold]{interval // 1000} тыс.[/bold]"
+        )
+    
+    # Добавляем поясняющую панель
+    if show_title:
+        console.print(
+            Panel(
+                "В этом разделе представлен полный перечень регулярных\n"
+                "технических процедур с рекомендованными интервалами\n"
+                "пробега для вашего автомобиля",
+                title="ℹ️ Информация",
+                title_align="left",
+                style="info",
+                width=70,
+                padding=(1, 2)),
+            justify="center"
+        )
+        console.print()
     
     console.print(table, justify="center")
+    
+    if show_title:
+        console.print(
+            Panel(
+                "[bold]Важно:[/bold] Фактические интервалы могут отличаться в зависимости "
+                "от условий эксплуатации, рекомендаций производителя и технического состояния автомобиля",
+                style="warning",
+                width=70,
+                padding=(1, 2)),
+            justify="center"
+        )
 
 
 def main():
@@ -305,7 +397,7 @@ def main():
         display_main_menu()
         choice = IntPrompt.ask(
             "\n[prompt]Выберите действие[/prompt]", 
-            choices=["1", "2", "3", "4"],
+            choices=["1", "2", "3", "4", "5"],  # Добавлен выбор 4 и 5
             show_choices=False
         )
         
@@ -331,7 +423,7 @@ def main():
             new_record.type_ = SERVICE_TYPE[service_type]
             
             if service_type == 0:  # Плановое ТО
-                display_planned_services()
+                display_planned_services(show_title=False)  # Упрощенное отображение
                 work_type = IntPrompt.ask(
                     "[prompt]Выберите выполненную работу[/prompt]", 
                     choices=[str(k) for k in PLANNED_WORK_WITH_PERIOD.keys()]
@@ -347,12 +439,15 @@ def main():
             console.rule("[header]История обслуживания[/header]", align="center")
             car_logger.show_service_history()
             
-        elif choice == 4:  # Выход
+        elif choice == 4:  # Новый пункт - Процедуры планового ТО
+            display_planned_services(show_title=True)  # Полноценное отображение
+            
+        elif choice == 5:  # Выход (теперь пункт 5)
             console.print("\n[info]🚗 Благодарим за использование сервиса! Хорошей дороги![/info]")
             break
         
         # Продолжить или выйти
-        if choice != 4:
+        if choice != 5:  # Обновлено на 5
             if not Confirm.ask("\n[prompt]Желаете выполнить ещё одну операцию?[/prompt]", default=True):
                 console.print("\n[info]🚗 Благодарим за использование сервиса! Хорошей дороги![/info]")
                 break
